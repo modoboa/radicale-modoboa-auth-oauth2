@@ -1,6 +1,7 @@
 """Authentication plugin for Radicale."""
 
 import requests
+import urllib3.util  # requests dependency
 
 from radicale.auth.dovecot import Auth as DovecotAuth
 from radicale.log import logger
@@ -26,7 +27,15 @@ class Auth(DovecotAuth):
             self._endpoint = configuration.get("auth", "oauth2_introspection_endpoint")
         except KeyError:
             raise RuntimeError("oauth2_introspection_endpoint must be set")
-        logger.warning("Using oauth2 introspection endpoint: %s" % (self._endpoint))
+
+        # Log OAuth2 introspection URL without secret
+        clean_endpoint_url = self._endpoint
+        clean_url_dict = urllib3.util.parse_url(clean_endpoint_url)._asdict()
+        auth_parts = clean_url_dict["auth"].split(":", 1)
+        if len(auth_parts) == 2:
+            clean_url_dict["auth"] = f"{auth_parts[0]}:********"
+            clean_endpoint_url = urllib3.util.Url(**clean_url_dict).url
+        logger.warning(f"Using OAuth2 introspection endpoint: {clean_endpoint_url}")
 
     def _login_ext(self, login, password, context):
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
