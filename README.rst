@@ -20,3 +20,11 @@ Here is a configuration example::
    type = radicale_modoboa_auth_oauth2
 
    oauth2_introspection_endpoint = <introspection url>
+
+Alternatively, if you wish to keep the OAuth2 client secret in a seperate file::
+
+   [auth]
+   type = radicale_modoboa_auth_oauth2
+
+   oauth2_introspection_endpoint = <introspection url with no secret/password>
+   oauth2_introspection_endpoint_secret = <path to file containing secret>
