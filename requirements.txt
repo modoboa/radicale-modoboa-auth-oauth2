@@ -1,2 +1,3 @@
 Radicale
 requests
+requests-unixsocket

@@ -28,3 +28,6 @@ Alternatively, if you wish to keep the OAuth2 client secret in a seperate file::
 
    oauth2_introspection_endpoint = <introspection url with no secret/password>
    oauth2_introspection_endpoint_secret = <path to file containing secret>
+
+Introspection URL may also contain the path to a Unix domain socket for local
+deployments: ``http+unix://radicale@%2Frun%2F<service>%2Fgunicorn.sock/<path>``

@@ -1,6 +1,6 @@
 """Authentication plugin for Radicale."""
 
-import requests
+import requests_unixsocket
 import urllib3.util  # requests dependency
 
 from radicale.auth.dovecot import Auth as DovecotAuth
@@ -49,12 +49,12 @@ class Auth(DovecotAuth):
                 ) from exc
             else:
                 auth_parts.append(secret)
-        endpoint_url_dict["auth"] = ":".join(auth_parts)
+        del endpoint_url_dict["auth"]
         self._endpoint = urllib3.util.Url(**endpoint_url_dict).url
+        self._endpoint_auth = tuple(auth_parts)
 
         # Log OAuth2 introspection URL without secret
-        clean_endpoint_url_dict = {**endpoint_url_dict, "auth": f"{auth_parts[0]}:********"}
-        clean_endpoint_url = urllib3.util.Url(**clean_endpoint_url_dict).url
+        clean_endpoint_url = urllib3.util.Url(**endpoint_url_dict, auth=f"{auth_parts[0]}:********").url
         logger.warning(f"Using OAuth2 introspection endpoint: {clean_endpoint_url}")
 
     def _login_ext(self, login, password, context):
@@ -62,8 +62,9 @@ class Auth(DovecotAuth):
         data = {
             "token": password
         }
-        response = requests.post(self._endpoint, data=data, headers=headers)
-        content = response.json()
-        if response.status_code == 200 and content.get("active") and content.get("username") == login:
-            return login
-        return super()._login_ext(login, password, context)
+        with requests_unixsocket.Session() as session:
+            response = session.post(self._endpoint, data=data, headers=headers, auth=self._endpoint_auth)
+            content = response.json()
+            if response.status_code == 200 and content.get("active") and content.get("username") == login:
+                return login
+            return super()._login_ext(login, password, context)
