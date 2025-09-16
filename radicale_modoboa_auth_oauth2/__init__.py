@@ -28,7 +28,7 @@ class Auth(DovecotAuth):
             raise RuntimeError("oauth2_introspection_endpoint must be set")
         logger.warning("Using oauth2 introspection endpoint: %s" % (self._endpoint))
 
-    def _login(self, login, password):
+    def _login_ext(self, login, password, context):
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "token": password
@@ -37,4 +37,4 @@ class Auth(DovecotAuth):
         content = response.json()
         if response.status_code == 200 and content.get("active") and content.get("username") == login:
             return login
-        return super()._login(login, password)
+        return super()._login(login, password, context)
