@@ -37,4 +37,4 @@ class Auth(DovecotAuth):
         content = response.json()
         if response.status_code == 200 and content.get("active") and content.get("username") == login:
             return login
-        return super()._login(login, password, context)
+        return super()._login_ext(login, password, context)
