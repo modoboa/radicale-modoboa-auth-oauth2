@@ -8,15 +8,20 @@ from radicale.auth import dovecot
 
 import radicale_modoboa_auth_oauth2
 
-INTROSPECTION_ENDPOINT = "https://radicale:secret@modoboa.test/api/o/introspect/"
+INTROSPECTION_ENDPOINT = "https://modoboa.test/api/o/introspect/"
+# Former configuration style, with the client credentials in the URL
+INTROSPECTION_ENDPOINT_WITH_CREDENTIALS = (
+    "https://radicale:secret@modoboa.test/api/o/introspect/"
+)
 RIGHTS_ENDPOINT = "https://modoboa.test/api/v2/calendar-rights/"
 TOKEN_ENDPOINT = "https://modoboa.test/api/o/token/"
 
-SHARE_LINK_OPTIONS = {
-    "modoboa_rights_endpoint": RIGHTS_ENDPOINT,
+CLIENT_CREDENTIALS = {
     "modoboa_client_id": "radicale",
     "modoboa_client_secret": "secret",
 }
+
+SHARE_LINK_OPTIONS = {"modoboa_rights_endpoint": RIGHTS_ENDPOINT, **CLIENT_CREDENTIALS}
 
 
 class FakeResponse:
@@ -45,8 +50,8 @@ class FakeApi:
         self.valid_tokens = set()
 
     def post(self, url, json=None, data=None, headers=None, auth=None, **kwargs):
-        if url == INTROSPECTION_ENDPOINT:
-            self.introspection_calls.append(data)
+        if url in (INTROSPECTION_ENDPOINT, INTROSPECTION_ENDPOINT_WITH_CREDENTIALS):
+            self.introspection_calls.append({"url": url, "auth": auth})
             username = self.user_tokens.get(data["token"])
             return FakeResponse(data={"active": bool(username), "username": username})
         if url == TOKEN_ENDPOINT:
@@ -111,7 +116,7 @@ def load_configuration(auth_options=None, extra=None):
     values = {
         "auth": {
             "type": "radicale_modoboa_auth_oauth2",
-            "oauth2_introspection_endpoint": INTROSPECTION_ENDPOINT,
+            "oauth2_introspection_endpoint": INTROSPECTION_ENDPOINT_WITH_CREDENTIALS,
             **(auth_options or {}),
         }
     }

@@ -1,11 +1,24 @@
 """Unit tests of the authentication plugin."""
 
+import logging
+
 import pytest
 import requests
 
-from conftest import SHARE_LINK_OPTIONS, TOKEN_ENDPOINT, FakeResponse
+from conftest import (
+    CLIENT_CREDENTIALS,
+    INTROSPECTION_ENDPOINT,
+    INTROSPECTION_ENDPOINT_WITH_CREDENTIALS,
+    SHARE_LINK_OPTIONS,
+    TOKEN_ENDPOINT,
+    FakeResponse,
+)
 
-from radicale_modoboa_auth_oauth2 import TOKEN_IDENTITY_PREFIX, get_token_identity
+from radicale_modoboa_auth_oauth2 import (
+    TOKEN_IDENTITY_PREFIX,
+    get_token_identity,
+    redact_url,
+)
 
 ALICE = "alice@example.com"
 SHARE_TOKEN = "0123456789abcdef0123456789abcdef"
@@ -35,6 +48,81 @@ def test_dovecot_fallback(make_auth, api, dovecot_server):
     assert auth._login_ext(ALICE, "password", None) == ALICE
     assert api.introspection_calls
     assert dovecot_server.calls == [ALICE]
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        (
+            "https://radicale:secret@modoboa.test/api/o/introspect/",
+            "https://radicale:***@modoboa.test/api/o/introspect/",
+        ),
+        (
+            "https://radicale:secret@modoboa.test:8443/api/o/introspect/",
+            "https://radicale:***@modoboa.test:8443/api/o/introspect/",
+        ),
+        (
+            "https://modoboa.test/api/o/introspect/",
+            "https://modoboa.test/api/o/introspect/",
+        ),
+    ],
+)
+def test_redact_url(url, expected):
+    assert redact_url(url) == expected
+
+
+def test_introspection_url_password_is_not_logged(make_auth, caplog):
+    with caplog.at_level(logging.DEBUG):
+        make_auth()
+    assert "radicale:***@modoboa.test" in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_introspection_with_client_credentials(make_auth, api):
+    api.user_tokens["oauth-token"] = ALICE
+    auth = make_auth(
+        oauth2_introspection_endpoint=INTROSPECTION_ENDPOINT, **CLIENT_CREDENTIALS
+    )
+    assert auth._login_ext(ALICE, "oauth-token", None) == ALICE
+    assert api.introspection_calls == [
+        {"url": INTROSPECTION_ENDPOINT, "auth": ("radicale", "secret")}
+    ]
+
+
+def test_introspection_client_credentials_are_form_encoded(make_auth, api):
+    auth = make_auth(
+        oauth2_introspection_endpoint=INTROSPECTION_ENDPOINT,
+        modoboa_client_id="radicale",
+        modoboa_client_secret="a b+c",
+    )
+    auth._login_ext(ALICE, "oauth-token", None)
+    assert api.introspection_calls[0]["auth"] == ("radicale", "a+b%2Bc")
+
+
+def test_introspection_with_credentials_in_url(make_auth, api):
+    """Former configuration style: requests takes credentials from the URL."""
+    auth = make_auth()
+    auth._login_ext(ALICE, "oauth-token", None)
+    assert api.introspection_calls == [
+        {"url": INTROSPECTION_ENDPOINT_WITH_CREDENTIALS, "auth": None}
+    ]
+
+
+def test_client_credentials_take_precedence_over_url(make_auth, api):
+    auth = make_auth(modoboa_client_id="radicale", modoboa_client_secret="new-secret")
+    auth._login_ext(ALICE, "oauth-token", None)
+    assert api.introspection_calls[0]["auth"] == ("radicale", "new-secret")
+
+
+@pytest.mark.parametrize("option", ["modoboa_client_id", "modoboa_client_secret"])
+def test_client_credentials_must_be_set_together(make_auth, option):
+    with pytest.raises(RuntimeError, match="must be set together"):
+        make_auth(**{option: "value"})
+
+
+def test_share_links_require_client_credentials(make_auth):
+    with pytest.raises(RuntimeError, match="modoboa_rights_endpoint"):
+        make_auth(modoboa_rights_endpoint=SHARE_LINK_OPTIONS["modoboa_rights_endpoint"])
 
 
 def test_share_links_disabled_by_default(make_auth, api):

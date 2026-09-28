@@ -31,9 +31,18 @@ Here is a configuration example::
    [auth]
    type = radicale_modoboa_auth_oauth2
 
-   oauth2_introspection_endpoint = <introspection url>
+   oauth2_introspection_endpoint = https://<modoboa>/api/o/introspect/
+   # Credentials of Radicale's OAuth2 application in Modoboa
+   modoboa_client_id = <client id>
+   modoboa_client_secret = <client secret>
    # Recommended: avoid one introspection call per CalDAV request
    cache_logins = True
+
+The client credentials can also be given in the introspection URL
+(``https://<client id>:<client secret>@<modoboa>/api/o/introspect/``),
+as older versions required. Separate settings are preferred: they keep
+the secret out of URLs, and take precedence when both are set. The
+password of the URL is masked in logs.
 
 Dovecot settings (``dovecot_socket`` and others) are those of Radicale's
 ``dovecot`` authentication.
@@ -41,13 +50,11 @@ Dovecot settings (``dovecot_socket`` and others) are those of Radicale's
 Share links
 -----------
 
-Share links are enabled by the following settings::
+Share links are enabled by the following setting, which requires
+``modoboa_client_id`` and ``modoboa_client_secret``::
 
    [auth]
    modoboa_rights_endpoint = https://<modoboa>/api/v2/calendar-rights/
-   # Credentials of Radicale's OAuth2 application in Modoboa
-   modoboa_client_id = <client id>
-   modoboa_client_secret = <client secret>
 
 ``modoboa_token_endpoint`` (default: ``/api/o/token/`` on the host of
 ``modoboa_rights_endpoint``) is Modoboa's OAuth2 token endpoint.

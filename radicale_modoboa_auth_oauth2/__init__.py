@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import re
 import time
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote_plus, urlsplit, urlunsplit
 
 import requests
 
@@ -42,6 +42,17 @@ def is_token_identity(login):
     return login.startswith(TOKEN_IDENTITY_PREFIX)
 
 
+def redact_url(url):
+    """Return url without the password it may contain, to log it."""
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    netloc = f"{parts.username}:***@{parts.hostname}"
+    if parts.port:
+        netloc += f":{parts.port}"
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 class Auth(DovecotAuth):
     """
     Custom authentication plugin using oAuth2 introspection mode.
@@ -57,13 +68,16 @@ class Auth(DovecotAuth):
 
     [auth]
     type = radicale_modoboa_auth_oauth2
-    oauth2_introspection_endpoint = <URL HERE>
+    oauth2_introspection_endpoint = https://<modoboa>/api/o/introspect/
+    # Credentials of Radicale's OAuth2 application. They can also be
+    # given in the introspection URL (https://<id>:<secret>@...), but
+    # separate settings keep the secret out of URLs.
+    modoboa_client_id = <client id>
+    modoboa_client_secret = <client secret>
     # Recommended: avoid one introspection call per CalDAV request
     cache_logins = True
     # Optional: share links
     modoboa_rights_endpoint = https://<modoboa>/api/v2/calendar-rights/
-    modoboa_client_id = <client id of Radicale's OAuth2 application>
-    modoboa_client_secret = <client secret of Radicale's OAuth2 application>
     # Optional, defaults to /api/o/token/ on the host of the rights endpoint
     modoboa_token_endpoint = https://<modoboa>/api/o/token/
     """
@@ -74,7 +88,18 @@ class Auth(DovecotAuth):
             self._endpoint = configuration.get("auth", "oauth2_introspection_endpoint")
         except KeyError:
             raise RuntimeError("oauth2_introspection_endpoint must be set")
-        logger.warning("Using oauth2 introspection endpoint: %s" % (self._endpoint))
+        logger.info(
+            "Using oauth2 introspection endpoint: %s", redact_url(self._endpoint)
+        )
+        self._client_credentials = self._get_client_credentials(configuration)
+        if self._client_credentials:
+            # Client credentials are form-encoded before HTTP Basic
+            # (RFC 6749, 2.3.1). They take precedence over the ones of
+            # the URL.
+            self._introspection_auth = tuple(map(quote_plus, self._client_credentials))
+        else:
+            # Credentials of the URL, if any, are used by requests
+            self._introspection_auth = None
         # Keep the connection to the introspection endpoint alive
         self._session = requests.Session()
         self._rights_client = self._make_rights_client(configuration)
@@ -87,21 +112,35 @@ class Auth(DovecotAuth):
         except KeyError:
             return None
 
+    def _get_client_credentials(self, configuration):
+        """Return the client id and secret of Radicale's OAuth2 application.
+
+        Return None when they are not set: both or none must be.
+        """
+        client_id = self._get_option(configuration, "modoboa_client_id")
+        client_secret = self._get_option(configuration, "modoboa_client_secret")
+        if not client_id and not client_secret:
+            return None
+        if not client_id or not client_secret:
+            raise RuntimeError(
+                "modoboa_client_id and modoboa_client_secret must be set together"
+            )
+        return client_id, client_secret
+
     def _make_rights_client(self, configuration):
         """Return the client used to check share link tokens, if enabled."""
         endpoint = self._get_option(configuration, "modoboa_rights_endpoint")
         if not endpoint:
             logger.info("Share links disabled: modoboa_rights_endpoint is not set")
             return None
-        credentials = []
-        for name in ("modoboa_client_id", "modoboa_client_secret"):
-            value = self._get_option(configuration, name)
-            if not value:
-                raise RuntimeError(f"{name} must be set with modoboa_rights_endpoint")
-            credentials.append(value)
+        if not self._client_credentials:
+            raise RuntimeError(
+                "modoboa_client_id and modoboa_client_secret must be set "
+                "with modoboa_rights_endpoint"
+            )
         client = RightsClient(
             endpoint,
-            *credentials,
+            *self._client_credentials,
             token_endpoint=self._get_option(configuration, "modoboa_token_endpoint"),
             timeout=SHARE_TOKEN_TIMEOUT,
         )
@@ -152,7 +191,7 @@ class Auth(DovecotAuth):
         try:
             response = self._session.post(
                 self._endpoint, data=data, headers=headers,
-                timeout=INTROSPECTION_TIMEOUT
+                auth=self._introspection_auth, timeout=INTROSPECTION_TIMEOUT
             )
         except requests.RequestException as exc:
             logger.error("OAuth2 introspection request failed: %s", exc)
