@@ -1,2 +1,2 @@
-Radicale
+Radicale>=3.5.6
 requests

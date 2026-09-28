@@ -24,6 +24,9 @@ keywords = ["radicale", "modoboa", "oauth2", "introspection"]
 readme = "README.rst"
 license = { file = "LICENSE" }
 
+[project.optional-dependencies]
+test = ["pytest"]
+
 [project.urls]
 Repository = "https://github.com/modoboa/radicale-modoboa-auth-oauth2"
 Issues = "https://github.com/modoboa/radicale-modoboa-auth-oauth2/issues"
